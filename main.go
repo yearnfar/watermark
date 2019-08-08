@@ -1,9 +1,7 @@
 package main
 
 import (
-	//"fmt"
-	"github.com/disintegration/imaging"
-	"github.com/golang/freetype"
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
@@ -11,37 +9,49 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"time"
+	"unicode/utf8"
+
+	"github.com/disintegration/imaging"
+	"github.com/golang/freetype"
 )
 
 func main() {
-	img, err := imaging.Open("1.png")
+	srcImg, err := imaging.Open("src.png")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	txtImg := makeText()
-	imaging.Save(txtImg, "txt.png")
+	//workpath := time.Now().Unix()
 
-	offset := image.Pt(img.Bounds().Dx()-txtImg.Bounds().Dx()-120, img.Bounds().Dy()-txtImg.Bounds().Dy()-40)
+	text := fmt.Sprintf("您好，世界！今天日期：%s", time.Now().Format("2006-01-02"))
+	textImg := makeTextImage(text, 32, 60)
 
-	//根据b画布的大小新建一个新图像
-	m := image.NewRGBA(img.Bounds())
-	draw.Draw(m, img.Bounds(), img, image.ZP, draw.Src)
-	draw.Draw(m, txtImg.Bounds().Add(offset), txtImg, image.ZP, draw.Over)
-	//draw.Draw(m, txtImg.Bounds(), txtImg, image.ZP, draw.Over)
+	// 调试
+	imaging.Save(textImg, "text_img.png")
 
-	imgw, err := os.Create("new.jpg")
-	jpeg.Encode(imgw, m, &jpeg.Options{100})
-	defer imgw.Close()
+	offset := image.Pt(srcImg.Bounds().Dx()-textImg.Bounds().Dx(), srcImg.Bounds().Dy()-textImg.Bounds().Dy())
 
+	newImg := image.NewRGBA(srcImg.Bounds())
+	draw.Draw(newImg, srcImg.Bounds(), srcImg, image.ZP, draw.Src)
+	draw.Draw(newImg, textImg.Bounds().Add(offset), textImg, image.ZP, draw.Over)
+
+	output, err := os.Create("watermark.jpg")
+	//output, err := os.Create(fmt.Sprintf("watermark_%d.jpg", timestamp))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer output.Close()
+	err = jpeg.Encode(output, newImg, &jpeg.Options{Quality: 100})
+	if err != nil {
+		log.Fatal(err)
+	}
 	return
 
 }
 
-func makeText() *image.NRGBA {
-	txtImg := image.NewNRGBA(image.Rect(0, 0, 120, 40))
-
-	//拷贝一个字体文件到运行目录
+func makeTextImage(text string, fontsize, rotate float64) *image.NRGBA {
 	fontBytes, err := ioutil.ReadFile("msyh.ttc")
 	if err != nil {
 		log.Println(err)
@@ -52,15 +62,22 @@ func makeText() *image.NRGBA {
 		log.Println(err)
 	}
 
-	f := freetype.NewContext()
-	f.SetDPI(72)
-	f.SetFont(font)
-	f.SetFontSize(22)
-	f.SetClip(txtImg.Bounds())
-	f.SetDst(txtImg)
-	f.SetSrc(image.NewUniform(color.RGBA{R: 255, G: 0, B: 0, A: 255}))
+	ctx := freetype.NewContext()
+	ctx.SetDPI(72)
+	ctx.SetFont(font)
+	ctx.SetFontSize(fontsize)
+	ctx.SetSrc(image.NewUniform(color.RGBA{R: 255, G: 0, B: 0, A: 255}))
 
-	pt := freetype.Pt(txtImg.Bounds().Dx()-120, txtImg.Bounds().Dy()-15)
-	f.DrawString("你好，世界！", pt)
-	return imaging.Rotate(txtImg, 60, color.Transparent)
+	txtImg := image.NewNRGBA(image.Rect(0, 0, int(fontsize)*utf8.RuneCountInString(text), int(fontsize)))
+	ctx.SetClip(txtImg.Bounds())
+	ctx.SetDst(txtImg)
+
+	pt := freetype.Pt(0, int(-fontsize/6)+ctx.PointToFixed(fontsize).Ceil())
+	ctx.DrawString(text, pt)
+
+	if rotate > 0 {
+		return imaging.Rotate(txtImg, rotate, color.Transparent)
+	} else {
+		return txtImg
+	}
 }
