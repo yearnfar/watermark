@@ -48,7 +48,6 @@ func main() {
 		log.Fatal(err)
 	}
 	return
-
 }
 
 func makeTextImage(text string, fontsize, rotate float64) *image.NRGBA {
